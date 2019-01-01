@@ -1,0 +1,27 @@
+request = request-line *(header CRLF) CRLF body
+request-line = method SP path SP http-version CRLF
+method = token
+path = 1*("/" *pchar) ["/"]
+pchar = ALPHA / DIGIT / "-" / "_" ; This is incorrect but will do for this toy example. See https://tools.ietf.org/html/rfc3986#section-3.3
+http-version = "H" "T" "T" "P" "/" DIGIT "." DIGIT
+header = field-name ":" *OWS field-content *OWS
+field-name = token
+field-content = VCHAR [ 1*WSP VCHAR ]
+token = 1*tchar
+tchar = DIGIT / ALPHA / "!" / "#" / "$" / "%" / "&" / "'" / "*"
+        / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
+body = *OCTET
+
+OWS = *WSP
+WSP = SP / HTAB
+SP = " "
+HTAB = "\t"
+CRLF = CR LF
+LF = "\n"
+CR = "\r"
+VCHAR = <"!" -> "}"> ; All printable ascii characters
+ALPHA = ALPHA_LOW | ALPHA_UP
+ALPHA_LOW = <"a" -> "z">
+ALPHA_UP = <"A" -> "Z">
+DIGIT = <"0" -> "9">
+OCTET = <\x00 -> \xFF>
