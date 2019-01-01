@@ -1,12 +1,12 @@
-request = request-line *(header CRLF) CRLF body
-request-line = method SP path SP http-version CRLF
-method = token
-path = 1*("/" *pchar) ["/"]
-pchar = ALPHA / DIGIT / "-" / "_" ; This is incorrect but will do for this toy example. See https://tools.ietf.org/html/rfc3986#section-3.3
+response = status-line *(header CRLF) CRLF body
+status-line = http-version SP status-code SP reason-phrase CRLF
 http-version = "H" "T" "T" "P" "/" DIGIT "." DIGIT
+status-code = 3*3DIGIT
+reason-phrase = *( HTAB / SP / VCHAR )
 header = field-name ":" *OWS field-content *OWS
 field-name = token
 field-content = VCHAR [ 1*WSP VCHAR ]
+
 token = 1*tchar
 tchar = DIGIT / ALPHA / "!" / "#" / "$" / "%" / "&" / "'" / "*"
         / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"

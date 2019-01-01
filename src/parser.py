@@ -4,75 +4,88 @@ import string
 
 from models import Request
 
+TOKEN_CHARS = string.ascii_letters + string.digits + ''.join([
+    '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~',
+])
+
+def chars_are_valid(string, valid_chars):
+    return all([c in valid_chars for c in string])
+
 # Request Line
+
+METHOD_CHARS = TOKEN_CHARS
+SEGMENT_CHARS = string.ascii_letters + string.digits + ''.join([
+    '-', '_', '.',
+])
 
 @dataclass
 class RequestLine:
     method: str
     path: str
+    version: str
 
-class RequestLineStates(Enum):
-    METHOD = 1
-    PATH = 2
-    VERSION = 3
-    TRAILER = 4
+    @staticmethod
+    def from_bytes(rl_bytes):
+        rl_string = rl_bytes.decode('ascii')
+        rl_parts = rl_string.split(' ')
+        if len(rl_parts) != 3:
+            raise ValueError('Request line has incorrect number of parts')
 
-class RequestLineParser:
-    METHOD_ALLOWED_CHARS = string.ascii_uppercase
-    PATH_ALLOWED_CHARS = string.printable
+        # Method
+        method = rl_parts[0]
+        if method == '':
+            raise ValueError('Method cannot be the empty string')
+        if not chars_are_valid(method, METHOD_CHARS):
+            raise ValueError('Invalid character in method')
 
-    def __init__(self):
-        self._buffer = b''
-        self._method = ''
-        self._path = ''
-        self._version = ''
-        self._state = RequestLineStates.METHOD
+        # Path
+        path = rl_parts[1]
+        if path == '':
+            raise ValueError('Path cannot be the empty string')
+        ## Only working with absolute paths, must begin with "/"
+        if path[0] != '/':
+            raise ValueError('Path must begin with "/"')
+        path_segments = path.split('/')
+        for segment in path_segments:
+            if not chars_are_valid(segment, SEGMENT_CHARS):
+                raise ValueError('Path segment contains an invalid character')
 
-    def consume_byte(self, byte):
-        self._buffer += byte
-        char = byte.decode('utf-8')
+        # Version
+        version = rl_parts[2]
+        if version != 'HTTP/1.1':
+            raise ValueError('Invalid HTTP version')
 
-        if self._state == RequestLineStates.METHOD:
-            if char == ' ':
-                self._state = RequestLineStates.PATH
-            elif char in RequestLineParser.METHOD_ALLOWED_CHARS:
-                self._method += char
-            else:
-                raise RuntimeError('Invalid byte in method')
+        return RequestLine(method, path, '1.1')
 
-            return None
 
-        elif self._state == RequestLineStates.PATH:
-            if char == ' ':
-                self._state = RequestLineStates.VERSION
-            elif char in RequestLineParser.PATH_ALLOWED_CHARS:
-                self._path += char
-            else:
-                raise RuntimeError('Invalid byte in path')
+FIELD_NAME_CHARS = TOKEN_CHARS
+FIELD_VALUE_CHARS = string.printable
 
-            return None
+def headers_from_bytes(headers_bytes):
+    headers_string = headers_bytes.decode('ascii')
+    header_strings = headers_string.split('\r\n')
+    headers = {}
+    for header_string in header_strings:
+        header_parts = header_string.split(':', 1)
+        if len(header_parts) != 2:
+            raise ValueError('Invalid header: no ":" separator')
 
-        elif self._state == RequestLineStates.VERSION:
-            if char == '\r':
-                self._state = RequestLineStates.TRAILER
-            elif char in RequestLineParser.PATH_ALLOWED_CHARS:
-                self._version += char
-            else:
-                raise RuntimeError('Invalid byte in version')
+        field_name = header_parts[0]
+        if field_name == '':
+            raise ValueError('Field name cannot be the empty string')
+        if not chars_are_valid(field_name, FIELD_NAME_CHARS):
+            raise ValueError('Invalid character in field name')
 
-            return None
+        field_value = header_parts[1]
+        field_value = field_value.strip() # Remove leading and trailing whitespace
+        if field_value == '':
+            raise ValueError('Field value cannot be the empty string')
+        if not chars_are_valid(field_value, FIELD_VALUE_CHARS):
+            raise ValueError('Invalid character in field value')
 
-        elif self._state == RequestLineStates.TRAILER:
-            if char == '\n':
-                if self._version.upper() != 'HTTP/1.1':
-                    raise RuntimeError('Unsupported version')
-                num_used_chars = len(self._buffer)
-                return RequestLine(self._method, self._path), num_used_chars,
-            else:
-                raise RuntimeError('Invalid byte in trailer')
+        headers[field_name.lower()] = field_value
 
-        else:
-            raise RuntimeError(f"Invalid state: {self._state}")
+    return headers
 
 
 class Parser:
@@ -81,23 +94,21 @@ class Parser:
 
     def consume_byte(self, byte):
         self._buffer += byte
-        if self._buffer[-4:] == b'\r\n\r\n':
-            stripped = self._buffer[:-4].decode('utf-8')
-            lines = stripped.split('\r\n')
+        trailer = self._buffer[-4:]
+        if trailer == b'\r\n\r\n':
+            stripped = self._buffer[:-4]
+            lines = stripped.split(b'\r\n')
 
-            request_line = lines[0]
-            [method, path, _] = request_line.split(' ')
+            if len(lines) < 1:
+                raise ValueError('Invalid request: Not enough lines')
 
-            unparsed_headers = lines[1:]
-            headers = {}
-            for unparsed_header in unparsed_headers:
-                [name, value] = unparsed_header.split(': ')
-                headers[name.lower()] = value
+            request_line = RequestLine.from_bytes(lines[0])
+            headers = headers_from_bytes(b'\r\n'.join(lines[1:]))
 
             self._buffer = b''
             return Request(
-                method=method,
-                path=path,
+                method=request_line.method,
+                path=request_line.path,
                 headers=headers,
                 body=None,
             )

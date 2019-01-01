@@ -9,6 +9,7 @@ class Request:
 
 @dataclass
 class Response:
-    status: int
-    message: str
+    status_code: int
+    reason_phrase: str
+    headers: dict
     body: bytes
